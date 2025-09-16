@@ -31,6 +31,10 @@
         .option-button:hover {
             transform: translateX(4px);
         }
+        .selected {
+            background-color: #e5e7eb;
+            border-color: #6b7280;
+        }
         .correct {
             background-color: #d1fae5;
             border-color: #34d399;
@@ -39,34 +43,35 @@
             background-color: #fee2e2;
             border-color: #f87171;
         }
-        .star-rating {
-            display: flex;
-            justify-content: center;
-            direction: rtl; /* For right-to-left layout of stars */
-        }
         .star-rating input {
             display: none;
         }
         .star-rating label {
-            font-size: 2rem;
+            font-size: 2.5rem;
             color: #ccc;
             cursor: pointer;
-            padding: 0 5px;
             transition: color 0.2s;
         }
+        .star-rating input:checked ~ label,
         .star-rating label:hover,
         .star-rating label:hover ~ label {
-            color: #ffc107;
-        }
-        .star-rating input:checked ~ label {
-            color: #ffc107;
+            color: #f59e0b;
         }
     </style>
 </head>
 <body class="p-6 md:p-12 flex items-center justify-center min-h-screen">
 
+    <!-- Introduction Screen -->
+    <div id="intro-screen" class="container mx-auto p-4 md:p-8 card text-center space-y-6">
+        <h1 class="text-3xl md:text-4xl font-bold mb-4 text-gray-800">Welcome to the AI-Powered Academic Integrity Toolkit</h1>
+        <p class="text-lg text-gray-600 mb-6">This training is designed for faculty to navigate the complex world of academic integrity in the age of generative AI. Through a series of realistic, scenario-based modules, you will learn to identify, assess, and address potential AI-related academic misconduct with confidence and empathy. This toolkit will provide you with the practical skills needed to foster a culture of integrity in your classroom, while also positioning AI as a tool for authentic learning.</p>
+        <button id="start-button" class="px-6 py-3 text-lg font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
+            Start Training
+        </button>
+    </div>
+
     <!-- Main Container -->
-    <div id="app" class="container mx-auto p-4 md:p-8 card space-y-6">
+    <div id="app" class="container mx-auto p-4 md:p-8 card space-y-6 hidden">
         <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-gray-800">AI-Powered Academic Integrity Toolkit</h1>
         <p class="text-center text-gray-600 mb-8">A Scenario-Based Training for Faculty</p>
 
@@ -77,7 +82,7 @@
 
         <!-- Progress Indicator and Bar -->
         <div class="mt-8">
-            <div id="progress-text" class="text-center text-gray-500 text-sm mb-2">Scenario 1 of 5</div>
+            <div id="progress-text" class="text-center text-gray-500 text-sm mb-2"></div>
             <div class="w-full bg-gray-200 rounded-full h-2">
                 <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-in-out" style="width: 0%;"></div>
             </div>
@@ -89,6 +94,12 @@
         document.addEventListener('DOMContentLoaded', () => {
             let correctAnswers = 0;
             let currentScenarioIndex = 0;
+            const introScreen = document.getElementById('intro-screen');
+            const app = document.getElementById('app');
+            const startButton = document.getElementById('start-button');
+            const scenarioContainer = document.getElementById('scenario-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
 
             const scenarios = [
                 {
@@ -148,28 +159,31 @@
                 }
             ];
 
-            const app = document.getElementById('app');
-            const scenarioContainer = document.getElementById('scenario-container');
-            const progressBar = document.getElementById('progress-bar');
-            const progressText = document.getElementById('progress-text');
-
             async function generateImage(prompt) {
                 const apiKey = "";
-                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
                 
                 try {
                     const response = await fetch(apiUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ instances: [{ prompt: prompt }], parameters: { "sampleCount": 1 } })
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [{ text: prompt }]
+                            }],
+                            generationConfig: {
+                                responseModalities: ['TEXT', 'IMAGE']
+                            },
+                        })
                     });
                     
                     if (!response.ok) {
-                        throw new Error(`API error: ${response.status} ${response.statusText}`);
+                        const errorData = await response.json();
+                        throw new Error(`API error: ${response.status} ${response.statusText} - ${JSON.stringify(errorData)}`);
                     }
 
                     const result = await response.json();
-                    const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                    const base64Data = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
 
                     if (!base64Data) {
                         throw new Error("No image data received from API.");
@@ -178,6 +192,7 @@
                     return `data:image/png;base64,${base64Data}`;
                 } catch (error) {
                     console.error("Image generation failed:", error);
+                    // Use a placeholder image in case of failure
                     return "https://placehold.co/800x450/e0e0e0/ffffff?text=Image+Load+Error";
                 }
             }
@@ -193,7 +208,7 @@
             async function renderScenario(scenario) {
                 scenarioContainer.innerHTML = `
                     <div class="card p-6 md:p-8">
-                        <div id="image-placeholder" class="relative w-full max-h-[50vh] overflow-hidden bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 font-bold mb-4">
+                        <div id="image-placeholder" class="relative w-full aspect-[16/9] overflow-hidden bg-gray-200 rounded-lg flex items-center justify-center text-gray-500 font-bold mb-4">
                             <span>Generating scene...</span>
                         </div>
                         <h2 class="text-xl md:text-2xl font-semibold text-gray-700 mb-4 mt-6">${scenario.title}</h2>
@@ -202,14 +217,23 @@
                             ${scenario.options.map((option, index) => `
                                 <button
                                     class="option-button w-full text-left p-4 rounded-lg border-2 border-gray-200 text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                    data-index="${index}"
                                     data-correct="${option.correct}"
                                     data-feedback="${option.feedback}"
                                     data-action="${option.action || ''}"
-                                    onclick="handleOptionClick(this, ${scenario.id}, ${index})"
                                 >
                                     ${option.text}
                                 </button>
                             `).join('')}
+                        </div>
+                        <div id="feedback-message" class="hidden mt-4"></div>
+                        <div id="action-buttons" class="mt-4 space-y-3">
+                               <button id="submit-button" class="w-full p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                Submit Answer
+                            </button>
+                            <button id="next-button" class="w-full p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 hidden">
+                                Next Scenario
+                            </button>
                         </div>
                     </div>
                 `;
@@ -220,54 +244,68 @@
                 imgElement.style.display = 'none';
                 imagePlaceholder.appendChild(imgElement);
 
-                try {
-                    const imageUrl = await generateImage(scenario.imagePrompt);
-                    imgElement.src = imageUrl;
-                    imgElement.style.display = 'block';
-                    imagePlaceholder.innerHTML = '';
-                    imagePlaceholder.appendChild(imgElement);
-                } catch (e) {
-                    console.error("Failed to generate and display image:", e);
-                    imagePlaceholder.textContent = "Failed to load image.";
-                }
+                const imageUrl = await generateImage(scenario.imagePrompt);
+                imgElement.src = imageUrl;
+                imgElement.style.display = 'block';
+                imagePlaceholder.innerHTML = '';
+                imagePlaceholder.appendChild(imgElement);
+                
+                const optionButtons = document.querySelectorAll('.option-button');
+                optionButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        optionButtons.forEach(btn => btn.classList.remove('selected'));
+                        button.classList.add('selected');
+                    });
+                });
+
+                document.getElementById('submit-button').addEventListener('click', handleSubmit);
+                document.getElementById('next-button').addEventListener('click', handleNext);
 
                 updateProgressBar();
             }
+            
+            function handleSubmit() {
+                const selectedButton = document.querySelector('.option-button.selected');
+                const feedbackMessage = document.getElementById('feedback-message');
+                const submitButton = document.getElementById('submit-button');
+                const nextButton = document.getElementById('next-button');
 
-            function showFeedback(feedback, isCorrect, button, action) {
-                const optionsContainer = document.getElementById('options-container');
-                if (!optionsContainer) return;
+                if (!selectedButton) {
+                    feedbackMessage.textContent = "Please select an answer before submitting.";
+                    feedbackMessage.className = "p-4 mt-4 rounded-lg bg-yellow-100 border-2 border-yellow-400 text-yellow-800";
+                    feedbackMessage.classList.remove('hidden');
+                    return;
+                }
 
-                const feedbackDiv = document.createElement('div');
-                feedbackDiv.className = `p-4 mt-4 rounded-lg border-2 ${isCorrect ? 'correct' : 'incorrect'}`;
-                feedbackDiv.innerHTML = `<p class="font-semibold text-sm md:text-base">${isCorrect ? 'Correct!' : 'Incorrect.'}</p><p class="mt-2 text-sm md:text-base">${feedback}</p>`;
-                optionsContainer.appendChild(feedbackDiv);
-                
-                const allButtons = optionsContainer.querySelectorAll('.option-button');
-                allButtons.forEach(btn => {
-                    btn.disabled = true;
-                    if (btn === button) {
-                        btn.classList.add(isCorrect ? 'bg-green-100' : 'bg-red-100');
-                    } else if (btn.dataset.correct === "true") {
-                        btn.classList.add('bg-green-100');
-                    }
-                });
+                const isCorrect = selectedButton.dataset.correct === "true";
+                const feedback = selectedButton.dataset.feedback;
+                const action = selectedButton.dataset.action;
+
+                if (isCorrect) {
+                    correctAnswers++;
+                }
+
+                document.querySelectorAll('.option-button').forEach(btn => btn.disabled = true);
+                selectedButton.classList.add(isCorrect ? 'correct' : 'incorrect');
+
+                feedbackMessage.innerHTML = `<p class="font-semibold text-sm md:text-base">${isCorrect ? 'Correct!' : 'Incorrect.'}</p><p class="mt-2 text-sm md:text-base">${feedback}</p>`;
+                feedbackMessage.className = `p-4 mt-4 rounded-lg border-2 ${isCorrect ? 'correct' : 'incorrect'}`;
+                feedbackMessage.classList.remove('hidden');
+
+                submitButton.classList.add('hidden');
+                nextButton.classList.remove('hidden');
 
                 if (action === 'show-analyzer') {
                     showAIAnalyzer();
+                }
+            }
+            
+            function handleNext() {
+                currentScenarioIndex++;
+                if (currentScenarioIndex < scenarios.length) {
+                    renderScenario(scenarios[currentScenarioIndex]);
                 } else {
-                    const nextButton = document.createElement('button');
-                    nextButton.className = 'w-full mt-4 p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500';
-                    nextButton.textContent = 'Next Scenario';
-                    nextButton.onclick = () => {
-                        currentScenarioIndex++;
-                        if (currentScenarioIndex < scenarios.length) {
-                            renderScenario(scenarios[currentScenarioIndex]);
-                        } else {
-                            showCompletion();
-                        }
-                    };
-                    optionsContainer.appendChild(nextButton);
+                    showCompletion();
                 }
             }
 
@@ -281,9 +319,6 @@
                             Analyze Text
                         </button>
                         <div id="analyzer-result" class="mt-4 text-center text-lg font-bold"></div>
-                        <button onclick="nextAfterAnalyzer()" class="w-full mt-4 p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            Continue to Next Scenario
-                        </button>
                     </div>
                 `;
                 scenarioContainer.innerHTML += analyzerHTML;
@@ -307,15 +342,6 @@
                     resultDiv.className = 'mt-4 text-center text-lg font-bold text-gray-800';
                 };
             }
-
-            window.nextAfterAnalyzer = () => {
-                currentScenarioIndex++;
-                if (currentScenarioIndex < scenarios.length) {
-                    renderScenario(scenarios[currentScenarioIndex]);
-                } else {
-                    showCompletion();
-                }
-            };
 
             function showCompletion() {
                 const finalScore = correctAnswers;
@@ -349,25 +375,27 @@
                             </button>
                         `}
                         
-                        <div id="feedback-form" class="mt-8 pt-8 border-t-2 border-gray-200">
-                            <h3 class="text-xl font-semibold text-gray-700 mb-4">Provide Feedback</h3>
-                            <p class="text-gray-600 mb-4">Rate the training (1-5 stars) and share your thoughts.</p>
-                            
-                            <div class="star-rating mb-4" id="star-rating">
-                                <input type="radio" id="star5" name="rating" value="5" /><label for="star5" title="5 stars">&#9733;</label>
-                                <input type="radio" id="star4" name="rating" value="4" /><label for="star4" title="4 stars">&#9733;</label>
-                                <input type="radio" id="star3" name="rating" value="3" /><label for="star3" title="3 stars">&#9733;</label>
-                                <input type="radio" id="star2" name="rating" value="2" /><label for="star2" title="2 stars">&#9733;</label>
-                                <input type="radio" id="star1" name="rating" value="1" /><label for="star1" title="1 star">&#9733;</label>
+                        <!-- Feedback Form -->
+                        <div class="mt-12 p-6 md:p-8 card space-y-4 text-left">
+                            <h3 class="text-xl font-semibold text-gray-800 text-center">Your Feedback</h3>
+                            <p class="text-gray-600 text-center">How would you rate this training?</p>
+                            <div class="star-rating flex justify-center text-yellow-500">
+                                <input type="radio" id="star5" name="rating" value="5"><label for="star5" title="5 stars">&#9733;</label>
+                                <input type="radio" id="star4" name="rating" value="4"><label for="star4" title="4 stars">&#9733;</label>
+                                <input type="radio" id="star3" name="rating" value="3"><label for="star3" title="3 stars">&#9733;</label>
+                                <input type="radio" id="star2" name="rating" value="2"><label for="star2" title="2 stars">&#9733;</label>
+                                <input type="radio" id="star1" name="rating" value="1"><label for="star1" title="1 star">&#9733;</label>
                             </div>
-
-                            <textarea id="feedback-comments" class="w-full h-24 p-4 rounded-lg border-2 border-gray-300 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-800 placeholder-gray-400" placeholder="Your comments (optional)"></textarea>
-
-                            <button id="submit-feedback-button" class="w-full mt-4 p-4 text-white bg-purple-600 rounded-lg font-semibold hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                            <textarea id="feedback-comments" class="w-full h-24 p-4 rounded-lg border-2 border-gray-300 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-800 placeholder-gray-400" placeholder="Optional comments..."></textarea>
+                            <button id="submit-feedback" class="w-full p-4 text-white bg-green-600 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                                 Submit Feedback
                             </button>
-                            <div id="feedback-message" class="mt-4 font-bold text-center hidden"></div>
+                            <div id="feedback-message-final" class="hidden mt-4 text-center text-sm font-semibold"></div>
                         </div>
+
+                        <button onclick="window.location.reload()" class="w-full mt-8 p-4 text-white bg-gray-500 rounded-lg font-semibold hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
+                            Back to Home
+                        </button>
                     </div>
                 `;
                 scenarioContainer.innerHTML = completionHTML;
@@ -384,358 +412,28 @@
                     };
                 }
 
-                // Feedback Form Logic
-                const feedbackMessage = document.getElementById('feedback-message');
-                document.getElementById('submit-feedback-button').onclick = () => {
+                document.getElementById('submit-feedback').onclick = () => {
                     const rating = document.querySelector('input[name="rating"]:checked');
                     const comments = document.getElementById('feedback-comments').value;
-
-                    if (!rating) {
-                        feedbackMessage.textContent = 'Please select a star rating.';
-                        feedbackMessage.className = 'mt-4 font-bold text-center text-red-500';
+                    const feedbackMessage = document.getElementById('feedback-message-final');
+                    if (rating || comments) {
+                        feedbackMessage.textContent = "Thank you for your feedback!";
                         feedbackMessage.classList.remove('hidden');
-                        return;
-                    }
-
-                    console.log(`Rating: ${rating.value} stars`);
-                    console.log(`Comments: ${comments}`);
-
-                    feedbackMessage.textContent = 'Thank you for your feedback!';
-                    feedbackMessage.className = 'mt-4 font-bold text-center text-green-600';
-                    feedbackMessage.classList.remove('hidden');
-                    
-                    document.getElementById('feedback-form').classList.add('pointer-events-none', 'opacity-50');
-                    document.getElementById('submit-feedback-button').disabled = true;
-                };
-            }
-
-            window.handleOptionClick = (button) => {
-                const isCorrect = button.dataset.correct === "true";
-                const feedback = button.dataset.feedback;
-                const action = button.dataset.action;
-
-                if (isCorrect) {
-                    correctAnswers++;
-                }
-                showFeedback(feedback, isCorrect, button, action);
-            };
-
-            renderScenario(scenarios[currentScenarioIndex]);
-        });
-    </script>
-</body>
-</html>
-=======
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-Powered Academic Integrity Toolkit</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f3f4f6;
-            color: #1f2937;
-        }
-        .container {
-            max-width: 800px;
-        }
-        .card {
-            background-color: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            transition: transform 0.2s, box-shadow 0.2s;
-        }
-        .card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
-        }
-        .option-button {
-            transition: background-color 0.2s, transform 0.2s;
-        }
-        .option-button:hover {
-            transform: translateX(4px);
-        }
-        .correct {
-            background-color: #d1fae5;
-            border-color: #34d399;
-        }
-        .incorrect {
-            background-color: #fee2e2;
-            border-color: #f87171;
-        }
-    </style>
-</head>
-<body class="p-6 md:p-12 flex items-center justify-center min-h-screen">
-
-    <!-- Main Container -->
-    <div id="app" class="container mx-auto p-4 md:p-8 card space-y-6">
-        <h1 class="text-3xl md:text-4xl font-bold text-center mb-6 text-gray-800">AI-Powered Academic Integrity Toolkit</h1>
-        <p class="text-center text-gray-600 mb-8">A Scenario-Based Training for Faculty</p>
-
-        <!-- Scenario Section -->
-        <div id="scenario-container" class="space-y-4">
-            <!-- Scenario content will be injected here by JavaScript -->
-        </div>
-
-        <!-- Progress Indicator and Bar -->
-        <div class="mt-8">
-            <div id="progress-text" class="text-center text-gray-500 text-sm mb-2">Scenario 1 of 5</div>
-            <div class="w-full bg-gray-200 rounded-full h-2">
-                <div id="progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-500 ease-in-out" style="width: 0%;"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScript for Scenarios and Logic -->
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            let correctAnswers = 0;
-            let currentScenarioIndex = 0;
-
-            const scenarios = [
-                {
-                    id: '1',
-                    title: "The Suspicious Paper",
-                    text: `You are Dr. Evelyn, a history professor. While grading a student's final paper, you notice something is off. The writing style is unusually formal, and certain phrases sound generic and stilted, almost like they were generated by a machine. The paper meets the length requirements but lacks the critical analysis you expect. What is your first step?`,
-                    image: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=800&fit=max',
-                    options: [
-                        { text: "Accuse the student of using AI and give them a zero.", feedback: "This is a poor choice. It's a confrontational approach that can be harmful if you are wrong. It violates university policy and can damage the student-professor relationship.", correct: false },
-                        { text: "Contact the student to schedule a meeting and discuss their research process and paper content.", feedback: "This is the best choice. It is a supportive, non-confrontational way to assess the student's true understanding and address your concerns.", correct: true },
-                        { text: "Run the paper through an AI detection tool and rely solely on its results.", feedback: "This is a risky choice. While AI detectors can provide clues, they are not 100% accurate and can lead to false accusations. They should only be one part of a larger investigation. Let's see how a simulated tool might work!", correct: false, action: 'show-analyzer' }
-                    ]
-                },
-                {
-                    id: '2',
-                    title: "The Follow-Up Conversation",
-                    text: `You meet with the student, Alex. When you ask them to explain their main arguments, they struggle to articulate the concepts and refer back to their notes frequently. They seem nervous and unable to expand on the ideas in their paper. How do you respond to this situation?`,
-                    image: 'https://images.unsplash.com/photo-1588075592557-080c9849200f?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=800&fit=max',
-                    options: [
-                        { text: "Explain your suspicions about AI use and ask them to confess.", feedback: "This is an aggressive approach that may cause the student to become defensive and shut down. It does not lead to a productive conversation.", correct: false },
-                        { text: "Focus on their lack of understanding and explain the consequences of academic misconduct.", feedback: "While this is a valid part of the conversation, it should not be your primary focus at this stage. You need to first understand the root cause of their struggles.", correct: false },
-                        { text: "Reframe the conversation around the learning objectives. Ask them to re-explain a specific section in their own words, focusing on their thought process and research methods.", feedback: "This is the most effective choice. It de-escalates the tension and moves the focus from accusation to genuine learning. It allows the student to demonstrate their knowledge and provides you with clear evidence of their understanding.", correct: true }
-                    ]
-                },
-                {
-                    id: '3',
-                    title: "Designing for Integrity",
-                    text: `After this experience, you want to redesign your next major assignment to make it "AI-proof." You need to create an assessment that requires students to apply personal knowledge and critical thinking that AI cannot easily replicate. What type of assignment do you choose?`,
-                    image: 'https://images.unsplash.com/photo-1517048676732-d65bc937f952?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=800&fit=max',
-                    options: [
-                        { text: "A traditional, five-paragraph essay on a very common topic.", feedback: "This is a poor choice. A common, generic topic is exactly what AI models are trained on and will lead to more instances of generative cheating.", correct: false },
-                        { text: "A group project where students must present their research findings to the class.", feedback: "This is a good choice. Group work and oral presentations add a layer of accountability and make it much harder to use AI. However, this may not be a perfect fit for all learning styles or class sizes.", correct: false },
-                        { text: "An authentic, problem-based learning project that requires students to apply course concepts to a unique, local case study or personal experience.", feedback: "This is the best choice. Authentic, contextualized problems are much harder for AI to solve and require the student's unique voice, perspective, and critical analysis. This also aligns with UDL principles.", correct: true }
-                    ]
-                },
-                {
-                    id: '4',
-                    title: "Communicating Expectations",
-                    text: `You've designed the new assignment, and now you need to communicate your academic integrity expectations clearly to the students. You want to set a positive tone and empower students to use AI responsibly as a tool, not as a shortcut. How do you phrase your message?`,
-                    image: 'https://images.unsplash.com/photo-1550997103-6250e8206d28?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=800&fit=max',
-                    options: [
-                        { text: `"Do not use AI for this assignment. All submissions will be checked with detection software and any use of AI will result in a zero and a report to the Dean."`, feedback: "This choice is too strict and can create a culture of fear. It focuses on policing instead of learning and does not acknowledge the productive use of AI as a tool.", correct: false },
-                        { text: `"This assignment requires you to use your own critical thinking skills. You may use AI for tasks like brainstorming or outlining, but all final content must be your own original work, fully cited."`, feedback: "This is the best choice. It establishes a clear policy for responsible use, sets expectations, and positions AI as a potential tool for learning and creativity.", correct: true },
-                        { text: `"I don't care if you use AI, as long as you get the right answers."`, feedback: "This is a very poor choice. It undermines the value of the assignment and the learning process. It signals to students that academic standards are not important.", correct: false }
-                    ]
-                },
-                {
-                    id: '5',
-                    title: "The Final Plan",
-                    text: `You have successfully navigated a difficult situation and redesigned your assignment. Your final step is to create a clear plan for your next course that supports students and promotes academic honesty in an AI-powered world. What does your plan include?`,
-                    image: 'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?ixlib=rb-4.0.3&q=80&fm=jpg&crop=entropy&cs=tinysrgb&w=800&fit=max',
-                    options: [
-                        { text: "Relying on a single, expensive plagiarism-detection software for all future assignments.", feedback: "This is an inefficient and risky plan. It is expensive and does not address the root problem of student motivation and understanding. It also relies on fallible technology.", correct: false },
-                        { text: "A plan to communicate with your department head about the need for new policies.", feedback: "This is a good, but incomplete plan. You are taking initiative, but this does not directly address the need to support your students and improve your own course design.", correct: false },
-                        { text: "A holistic plan that includes redesigned, authentic assessments; open communication with students about AI use; and ongoing professional development to stay current on new technologies.", feedback: "This is the most comprehensive and effective plan. It addresses the problem from multiple angles—pedagogy, communication, and professional growth—which demonstrates a forward-thinking and well-rounded approach.", correct: true }
-                    ]
-                }
-            ];
-
-            const app = document.getElementById('app');
-            const scenarioContainer = document.getElementById('scenario-container');
-            const progressBar = document.getElementById('progress-bar');
-            const progressText = document.getElementById('progress-text');
-
-            function updateProgressBar() {
-                const progress = ((currentScenarioIndex) / scenarios.length) * 100;
-                progressBar.style.width = `${progress}%`;
-                if (currentScenarioIndex < scenarios.length) {
-                    progressText.textContent = `Scenario ${currentScenarioIndex + 1} of ${scenarios.length}`;
-                }
-            }
-
-            function renderScenario(scenario) {
-                scenarioContainer.innerHTML = '';
-                const scenarioHTML = `
-                    <div class="card p-6 md:p-8">
-                        <img src="${scenario.image}" alt="${scenario.title}" class="rounded-lg mb-4 w-full h-auto object-cover">
-                        <h2 class="text-xl md:text-2xl font-semibold text-gray-700 mb-4">${scenario.title}</h2>
-                        <p class="text-gray-700 mb-6">${scenario.text}</p>
-                        <div class="space-y-3">
-                            ${scenario.options.map((option, index) => `
-                                <button
-                                    class="option-button w-full text-left p-4 rounded-lg border-2 border-gray-200 text-gray-800 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                                    data-correct="${option.correct}"
-                                    data-feedback="${option.feedback}"
-                                    data-action="${option.action || ''}"
-                                    onclick="handleOptionClick(this, ${scenario.id}, ${index})"
-                                >
-                                    ${option.text}
-                                </button>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-                scenarioContainer.innerHTML = scenarioHTML;
-                updateProgressBar();
-            }
-
-            function showFeedback(feedback, isCorrect, button, action) {
-                const feedbackDiv = document.createElement('div');
-                feedbackDiv.className = `p-4 mt-4 rounded-lg border-2 ${isCorrect ? 'correct' : 'incorrect'}`;
-                feedbackDiv.innerHTML = `<p class="font-semibold text-sm md:text-base">${isCorrect ? 'Correct!' : 'Incorrect.'}</p><p class="mt-2 text-sm md:text-base">${feedback}</p>`;
-                scenarioContainer.appendChild(feedbackDiv);
-                
-                const allButtons = scenarioContainer.querySelectorAll('.option-button');
-                allButtons.forEach(btn => {
-                    btn.disabled = true;
-                    if (btn === button) {
-                        btn.classList.add(isCorrect ? 'bg-green-100' : 'bg-red-100');
-                    } else if (btn.dataset.correct === "true") {
-                        btn.classList.add('bg-green-100');
-                    }
-                });
-
-                if (action === 'show-analyzer') {
-                    showAIAnalyzer();
-                } else {
-                    const nextButton = document.createElement('button');
-                    nextButton.className = 'w-full mt-4 p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500';
-                    nextButton.textContent = 'Next Scenario';
-                    nextButton.onclick = () => {
-                        currentScenarioIndex++;
-                        if (currentScenarioIndex < scenarios.length) {
-                            renderScenario(scenarios[currentScenarioIndex]);
-                        } else {
-                            showCompletion();
-                        }
-                    };
-                    scenarioContainer.appendChild(nextButton);
-                }
-            }
-
-            function showAIAnalyzer() {
-                const analyzerHTML = `
-                    <div class="mt-8 card p-6">
-                        <h3 class="text-xl font-semibold mb-4 text-gray-700">Simulated AI Text Analyzer</h3>
-                        <p class="text-gray-600 mb-4">Paste the student's text here to see a simulated AI-detection score.</p>
-                        <textarea id="analyzer-input" class="w-full h-32 p-4 rounded-lg border-2 border-gray-300 focus:ring-blue-500 focus:border-blue-500 resize-none text-gray-800" placeholder="Paste text here..."></textarea>
-                        <button id="analyze-button" class="w-full mt-4 p-4 text-white bg-purple-600 rounded-lg font-semibold hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
-                            Analyze Text
-                        </button>
-                        <div id="analyzer-result" class="mt-4 text-center text-lg font-bold"></div>
-                        <button onclick="nextAfterAnalyzer()" class="w-full mt-4 p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            Continue to Next Scenario
-                        </button>
-                    </div>
-                `;
-                scenarioContainer.innerHTML += analyzerHTML;
-
-                document.getElementById('analyze-button').onclick = () => {
-                    const text = document.getElementById('analyzer-input').value;
-                    const resultDiv = document.getElementById('analyzer-result');
-                    const keywords = ['stilted', 'unusual formal', 'stilted', 'lacks critical analysis'];
-                    let score = 0;
-                    if (text.trim() === '') {
-                        resultDiv.textContent = 'Please paste some text to analyze.';
-                        resultDiv.className = 'mt-4 text-center text-red-500 font-bold';
-                        return;
-                    }
-
-                    if (keywords.some(keyword => text.toLowerCase().includes(keyword))) {
-                        score = Math.floor(Math.random() * 20) + 80;
+                        feedbackMessage.classList.add('text-green-600');
                     } else {
-                        score = Math.floor(Math.random() * 20) + 10;
+                        feedbackMessage.textContent = "Please provide a rating or a comment.";
+                        feedbackMessage.classList.remove('hidden');
+                        feedbackMessage.classList.add('text-red-600');
                     }
-                    resultDiv.textContent = `Likelihood of AI-generated content: ${score}%`;
-                    resultDiv.className = 'mt-4 text-center text-lg font-bold text-gray-800';
                 };
             }
 
-            window.nextAfterAnalyzer = () => {
-                currentScenarioIndex++;
-                if (currentScenarioIndex < scenarios.length) {
-                    renderScenario(scenarios[currentScenarioIndex]);
-                } else {
-                    showCompletion();
-                }
-            };
-
-            function showCompletion() {
-                const finalScore = correctAnswers;
-                const passingScore = 4;
-                const completionHTML = `
-                    <div class="text-center card p-6 md:p-8 space-y-4">
-                        <h2 class="text-2xl md:text-3xl font-semibold text-gray-800">Training Complete!</h2>
-                        <p class="text-gray-600 font-bold text-2xl mb-4">Your Score: ${finalScore} out of ${scenarios.length}</p>
-                        ${finalScore >= passingScore ? `
-                            <p class="text-gray-600">Congratulations! You have successfully navigated all the scenarios in the AI-Powered Academic Integrity Toolkit with an excellent score. This training was designed to showcase a practical approach to a real-world problem.</p>
-                            <div class="mt-6">
-                                <input type="text" id="name-input" class="w-full md:w-2/3 p-3 rounded-lg border-2 border-gray-300 focus:ring-blue-500 focus:border-blue-500 text-gray-800 placeholder-gray-400" placeholder="Enter your name for a certificate">
-                                <button id="generate-cert-button" class="w-full mt-4 p-4 text-white bg-green-600 rounded-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                                    Generate Certificate
-                                </button>
-                            </div>
-                            <div id="certificate-container" class="mt-8 hidden">
-                                <div class="bg-white border-4 border-gray-800 p-8 md:p-12 rounded-lg shadow-2xl">
-                                    <h3 class="text-4xl md:text-5xl font-bold text-gray-800 mb-2">Certificate of Completion</h3>
-                                    <p class="text-xl md:text-2xl text-gray-600">This certifies that</p>
-                                    <p id="cert-name" class="text-3xl md:text-4xl font-bold text-blue-600 mt-2 mb-4">Name</p>
-                                    <p class="text-lg md:text-xl text-gray-700">has successfully completed the</p>
-                                    <p class="text-2xl md:text-3xl font-semibold text-gray-900 mt-2 mb-4">AI-Powered Academic Integrity Toolkit</p>
-                                    <p class="text-sm md:text-base text-gray-500 mt-4">on ${new Date().toLocaleDateString()}</p>
-                                </div>
-                            </div>
-                        ` : `
-                            <p class="text-gray-600">You've completed the training. Your score suggests you should review the material one more time to master the key concepts. We recommend trying the training again to reinforce your knowledge.</p>
-                            <button onclick="window.location.reload()" class="w-full mt-4 p-4 text-white bg-blue-600 rounded-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                Redo Training
-                            </button>
-                        `}
-                    </div>
-                `;
-                scenarioContainer.innerHTML = completionHTML;
-                progressText.textContent = `Training Complete`;
-                progressBar.style.width = '100%';
-
-                if (finalScore >= passingScore) {
-                    document.getElementById('generate-cert-button').onclick = () => {
-                        const name = document.getElementById('name-input').value;
-                        if (name) {
-                            document.getElementById('cert-name').textContent = name;
-                            document.getElementById('certificate-container').classList.remove('hidden');
-                        }
-                    };
-                }
-            }
-
-            window.handleOptionClick = (button, scenarioId, optionIndex) => {
-                const isCorrect = button.dataset.correct === "true";
-                const feedback = button.dataset.feedback;
-                const action = button.dataset.action;
-
-                if (isCorrect) {
-                    correctAnswers++;
-                }
-                showFeedback(feedback, isCorrect, button, action);
-            };
-
-            renderScenario(scenarios[currentScenarioIndex]);
+            startButton.addEventListener('click', () => {
+                introScreen.classList.add('hidden');
+                app.classList.remove('hidden');
+                renderScenario(scenarios[currentScenarioIndex]);
+            });
         });
     </script>
-
 </body>
 </html>
